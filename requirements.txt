@@ -1,0 +1,9 @@
+fredapi
+pandas
+matplotlib
+reportlab
+requests
+beautifulsoup4
+anthropic
+python-dotenv
+tavily-python
