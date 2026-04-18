@@ -32,6 +32,7 @@ from tools.synthesize_narrative import synthesize_narrative
 from tools.qa_narrative       import qa_narrative
 from tools.generate_report    import generate_report
 from tools.send_email         import send_email
+from tools.upload_to_github   import upload_report
 
 
 def _most_recent_friday() -> date:
@@ -48,6 +49,7 @@ async def main(test_mode: bool = False) -> None:
     gmail_address   = os.environ["GMAIL_ADDRESS"]
     app_password    = os.environ["GMAIL_APP_PASSWORD"]
     recipient_email = os.environ["RECIPIENT_EMAIL"]
+    github_token    = os.environ.get("GITHUB_TOKEN", "")
 
     friday = _most_recent_friday()
 
@@ -141,6 +143,13 @@ async def main(test_mode: bool = False) -> None:
         subprocess.run(["open", pdf_path])
     else:
         send_email(pdf_path, gmail_address, app_password, recipient_email)
+
+    # ── Step 7: Upload to GitHub for website embedding ────────────────────────
+    if github_token:
+        print("\n[+] Uploading to GitHub...", flush=True)
+        upload_report(pdf_path, github_token, week_ending=friday.isoformat())
+    else:
+        print("\n[+] Skipping GitHub upload (no GITHUB_TOKEN set).", flush=True)
 
     print(f"\n{'=' * 55}", flush=True)
     print("Done.", flush=True)
