@@ -87,8 +87,8 @@ def fetch_yields(fred_api_key: str) -> dict:
     result     = {"week_ending": friday.isoformat(), "month_start": {}, "year_ago": {}}
 
     for series_id in TREASURY_SERIES:
-        # Friday close — must be exact
-        result[series_id] = _fetch_on_or_before(series_id, friday, fred_api_key, require_exact=True)
+        # Fetch most recent available value on or before Friday (FRED lags 1 business day)
+        result[series_id] = _fetch_on_or_before(series_id, friday, fred_api_key, require_exact=False)
         # Month-start and year-ago — best available, no staleness guard
         try:
             result["month_start"][series_id] = _fetch_on_or_before(series_id, mstart, fred_api_key)["value"]

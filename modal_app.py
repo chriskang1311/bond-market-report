@@ -31,22 +31,18 @@ image = (
         "requests",
         "tavily-python",
     )
-)
-
-source = modal.Mount.from_local_dir(
-    ".",
-    remote_path="/root/app",
-    condition=lambda p: not any(
-        x in p for x in ["__pycache__", ".git", ".env", ".pyc", "bond-reports"]
-    ),
+    .add_local_dir(
+        ".",
+        remote_path="/root/app",
+        ignore=["__pycache__", ".git", ".env", "*.pyc", "bond-reports", ".DS_Store"],
+    )
 )
 
 
 @app.function(
     image=image,
     secrets=[modal.Secret.from_name("bond-report-secrets")],
-    mounts=[source],
-    schedule=modal.Cron("0 21 * * 5"),  # 5pm EDT (UTC-4); adjust to 22 in winter EST
+    schedule=modal.Cron("0 22 * * 5"),  # 6pm EDT (UTC-4); gives FRED 1h45m buffer after 4:15pm H.15 release
     timeout=600,
 )
 async def weekly_bond_report():

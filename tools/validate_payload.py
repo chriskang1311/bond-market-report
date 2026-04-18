@@ -29,17 +29,23 @@ def validate_payload(payload: dict) -> dict:
     yields      = payload.get("yields", {})
     spreads     = payload.get("spreads", {})
 
-    # Yield date staleness
+    # Yield date staleness — FRED lags 1 business day, so observation_date
+    # may be Thursday when week_ending is Friday. Accept if within 3 days.
+    from datetime import date as _date
+    we = _date.fromisoformat(week_ending) if week_ending else None
     for series_id, data in yields.items():
-        if series_id == "week_ending":
+        if series_id in ("week_ending", "month_start", "year_ago"):
             continue
         if not isinstance(data, dict):
             continue
         obs_date = data.get("observation_date")
-        if obs_date and obs_date != week_ending:
-            errors.append(
-                f"STALE_DATA: {series_id} observation_date is {obs_date}, expected {week_ending}"
-            )
+        if obs_date and we:
+            delta = (we - _date.fromisoformat(obs_date)).days
+            if delta > 3:
+                errors.append(
+                    f"STALE_DATA: {series_id} observation_date is {obs_date}, "
+                    f"which is {delta} days before week_ending {week_ending}"
+                )
 
     # Yield value sanity
     for series_id, data in yields.items():
