@@ -93,17 +93,27 @@ def synthesize_narrative(
     client = anthropic.Anthropic(api_key=anthropic_api_key)
     msg = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=2048,
+        max_tokens=4096,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_content}],
     )
 
     raw = msg.content[0].text.strip()
+
+    # Strip markdown code fences
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):
             raw = raw[4:]
-    return json.loads(raw.strip())
+        raw = raw.strip()
+
+    # Extract the outermost JSON object in case there's surrounding prose
+    start = raw.find("{")
+    end   = raw.rfind("}") + 1
+    if start != -1 and end > start:
+        raw = raw[start:end]
+
+    return json.loads(raw)
 
 
 if __name__ == "__main__":
