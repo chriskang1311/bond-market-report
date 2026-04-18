@@ -43,9 +43,12 @@ def send_email(
         "Data sourced from FRED, MarketWatch, CNBC, and Reuters."
     )
 
+    # Support comma-separated recipient list
+    recipients = [r.strip() for r in recipient_email.split(",") if r.strip()]
+
     msg            = MIMEMultipart()
     msg["From"]    = gmail_address
-    msg["To"]      = recipient_email
+    msg["To"]      = ", ".join(recipients)
     msg["Subject"] = subject
     msg.attach(MIMEText(body, "plain"))
 
@@ -61,9 +64,9 @@ def send_email(
         server.ehlo()
         server.starttls()
         server.login(gmail_address, app_password)
-        server.sendmail(gmail_address, recipient_email, msg.as_string())
+        server.sendmail(gmail_address, recipients, msg.as_string())
 
-    print(f"  Email sent to {recipient_email}", flush=True)
+    print(f"  Email sent to {', '.join(recipients)}", flush=True)
 
 
 if __name__ == "__main__":
