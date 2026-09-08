@@ -15,39 +15,49 @@ from dotenv import load_dotenv
 import anthropic
 
 
-QA_PROMPT = """You are a strict fact-checker for a fixed income market report.
+QA_PROMPT = """You are a fact-checker for a weekly fixed income report. Your only job is to catch
+figures and claims that the data payload does NOT support. You are not an editor: do not flag
+wording, tone, emphasis, or which adjective the analyst chose.
 
 You will receive:
-1. A narrative with an intro paragraph and bullet points written by an analyst
-2. The validated data payload the narrative should be grounded in
+1. NARRATIVE — an intro paragraph and bullets written by an analyst
+2. DATA PAYLOAD — the validated data the narrative must be grounded in
 
-Check the following and return a JSON object:
+Context on dates: FRED publishes Treasury and spread data with about a one business-day lag, so
+`observation_date` is normally the day before `week_ending`. That lag is expected and is not a
+problem on its own.
 
-CHECKS:
-A. Every numeric figure in the narrative (yields in %, spreads in bps, returns in %)
-   must match the corresponding JSON value within ±1bp/1bps/0.01% tolerance.
-B. Directional language ("rose", "fell", "tightened", "widened", "steepened", "flattened")
-   must be consistent with the sign of the MTD change fields in the payload.
-C. No Fed official should be attributed a quote or stance not present in fed_speakers.
-   If fed_speakers is empty, no speaker-specific claims should appear in the narrative.
-D. If late_breaking_events contains any event dated Wednesday or later,
-   that event must appear in the narrative.
-E. No figure should be cited as the Friday close if its observation_date != week_ending,
-   unless it is flagged inline with [DATA: as of {date}].
+CHECKS — work through each one in the "reasoning" field:
+A. NUMBERS. Every yield (%), spread (bps), and return (%) the narrative states matches the
+   payload value within ±1 (bp / bps / 0.01%). Also verify figures the narrative derives itself:
+   curve spreads (2s10s = DGS10 − DGS2, 2s30s = DGS30 − DGS2), week-over-week / MTD changes
+   against the payload's change fields, and year-over-year moves against `year_ago`. A figure is
+   a violation only if it is actually wrong.
+B. DIRECTION. When the narrative says a yield or spread "rose / fell / widened / tightened /
+   steepened / flattened", the sign must not contradict the payload's change field (e.g. it says
+   "tightened" but the MTD change is positive). If the direction is defensible from the numbers,
+   it is fine — do not flag it over word choice.
+C. FED SPEAKERS. No stance or quote is attributed to a Fed official that is not in
+   `fed_speakers`. If `fed_speakers` is empty, the narrative makes no speaker-specific claim.
+D. LATE-BREAKING EVENTS. Every event in `late_breaking_events` dated Wednesday or later of the
+   report week appears in the narrative.
+E. AS-OF LABELLING. Only a violation if the narrative explicitly presents a figure as the
+   Friday (`week_ending`) close when its `observation_date` is earlier AND the narrative nowhere
+   states the real as-of date (an inline "[DATA: as of <date>]" on any figure, or a general
+   note, both count). The ordinary one-day lag, disclosed once anywhere, is acceptable.
 
-RETURN FORMAT — respond only with valid JSON, no prose:
+RETURN — respond with a single valid JSON object and nothing else:
 {
-  "status": "PASS",
-  "failures": []
+  "reasoning": "<brief check-by-check working — for each figure you doubt, quote the narrative value, quote the payload value, and say MATCH or MISMATCH. Keep it to a few lines per check.>",
+  "status": "PASS" or "FAIL",
+  "failures": ["A: narrative cites 10y at 4.35% but payload DGS10 = 4.32%", "D: Strait of Hormuz event (2026-04-17) missing from narrative"]
 }
-OR
-{
-  "status": "FAIL",
-  "failures": [
-    "A: Narrative cites 10yr at 4.35% but payload shows 4.32%",
-    "D: Iran Strait of Hormuz event (2026-04-17) not mentioned in narrative"
-  ]
-}"""
+
+Rules for the output:
+- "failures" contains ONLY confirmed violations, one short sentence each, prefixed with the
+  check letter. If a check passes, it does not appear in "failures".
+- "status" is "FAIL" if and only if "failures" is non-empty. If every check passes, return
+  "status": "PASS" with "failures": []."""
 
 
 def _narrative_to_text(narrative: dict) -> str:
@@ -80,8 +90,11 @@ def qa_narrative(
         anthropic_api_key: Anthropic API key
 
     Returns:
-        {"status": "PASS", "failures": []}
-        {"status": "FAIL", "failures": ["A: ...", "D: ..."]}
+        {"reasoning": "...", "status": "PASS", "failures": []}
+        {"reasoning": "...", "status": "FAIL", "failures": ["A: ...", "D: ..."]}
+
+    Only "status" and "failures" are consumed downstream; "reasoning" gives the
+    model somewhere to work other than the failures list.
     """
     narrative_text = _narrative_to_text(narrative)
     payload_json   = json.dumps(payload, indent=2)
@@ -95,12 +108,12 @@ DATA PAYLOAD:
     client = anthropic.Anthropic(api_key=anthropic_api_key)
     msg = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=1024,
+        max_tokens=2048,  # room for the reasoning field + failures list
         system=QA_PROMPT,
         messages=[{"role": "user", "content": user_content}],
     )
 
-    raw = msg.content[0].text.strip()
+    raw = next((b.text for b in msg.content if b.type == "text"), "").strip()
 
     # Strip markdown code fences
     if raw.startswith("```"):
