@@ -1,0 +1,51 @@
+name: Weekly Bond Report
+
+on:
+  schedule:
+    # Fridays 23:00 UTC — 7pm EDT / 6pm EST, comfortably after the FRED H.15
+    # release (~4:15pm ET). GitHub's scheduler can lag 10-15+ min under load;
+    # use the "Run workflow" button (workflow_dispatch) to re-run manually,
+    # e.g. if a run aborts with STALE_DATA because FRED hasn't posted yet.
+    - cron: "0 23 * * 5"
+  workflow_dispatch:
+
+# Allow the built-in GITHUB_TOKEN to commit the generated PDFs back to reports/.
+permissions:
+  contents: write
+
+concurrency:
+  group: weekly-bond-report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generate, email, and commit the weekly report
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+          # Built-in token — scoped to this repo, auto-rotated each run, never expires.
+          # run_report.py passes it to tools/upload_to_github.py, which writes
+          # reports/latest.pdf and the dated archive copy via the GitHub API.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python run_report.py
